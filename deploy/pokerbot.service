@@ -1,0 +1,16 @@
+[Unit]
+Description=Open Poker bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=pokerbot
+WorkingDirectory=/home/pokerbot/pokerBot
+ExecStart=/home/pokerbot/venv/bin/python openpoker_client.py
+Restart=always
+RestartSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
