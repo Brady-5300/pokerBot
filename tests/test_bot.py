@@ -269,16 +269,17 @@ def test_raises_are_counted_but_blind_sized_actions_are_not():
     assert session.hand.raises == 0
 
 
-@pytest.mark.parametrize("hole, expected", [("Ah 3d", {"check"}), ("3h 4d", {"check"}),
-                                            ("9h 8d", {"check", "raise"})])
-def test_continuation_bets_need_at_least_a_medium_hand(hole, expected):
-    actions = set()
-    for seed in range(40):
-        view = View(hole=cards(hole), board=cards("As 8c 2d") if hole == "9h 8d" else cards("Kc 9d 2s"),
-                    pot=110, to_call=0, stack=2000, big_blind=20, players_behind=1,
-                    was_aggressor=True, rng=random.Random(seed))
-        actions.add(strategy.decide(view)[0])
-    assert actions == expected
+@pytest.mark.parametrize("hole", ["Ah 3d", "3h 4d", "9h 8d"])
+def test_heads_up_flop_raiser_always_continuation_bets(hole):
+    view = View(hole=cards(hole), board=cards("Kc 9d 2s"), pot=110, to_call=0, stack=2000,
+                big_blind=20, players_behind=1, was_aggressor=True)
+    assert strategy.decide(view) == ("raise", strategy.pot_raise_to(view, strategy.CBET_SIZE))
+
+
+def test_no_continuation_bet_into_two_opponents():
+    view = View(hole=cards("3h 4d"), board=cards("Kc 9d 2s"), pot=110, to_call=0, stack=2000,
+                big_blind=20, opponents=2, players_behind=1, was_aggressor=True)
+    assert strategy.decide(view) == ("check", 0)
 
 
 def test_value_bets_scale_with_hand_strength():

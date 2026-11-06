@@ -19,21 +19,26 @@ from ranges import draw_outs, hand_key
 log = logging.getLogger("strategy")
 
 # Top fraction of hands to open, keyed by players left to act behind us.
-OPEN_RANGE = {5: 0.15, 4: 0.19, 3: 0.27, 2: 0.42, 1: 0.36, 0: 0.36}
+# Logged players fold 71% each to an open, so opens run wide.
+OPEN_RANGE = {5: 0.22, 4: 0.28, 3: 0.40, 2: 0.60, 1: 0.54, 0: 0.54}
 SHOVE_RANGE = {5: 0.11, 4: 0.14, 3: 0.19, 2: 0.29, 1: 0.40, 0: 0.40}
 SHORT_STACK_BB = 12
 THREE_BET_RANGE = 0.035
 FOUR_BET_RANGE = 0.015
 RAISE_JAM_BB = 30
+OPEN_SIZE_BB = 2.5
 
 # Rough equity by made-hand tier; see postflop_tier().
 AIR, WEAK, MEDIUM, GOOD, STRONG, MONSTER = range(6)
 TIER_EQUITY = {AIR: 0.08, WEAK: 0.20, MEDIUM: 0.40, GOOD: 0.58, STRONG: 0.75, MONSTER: 0.92}
 # Betting street after street is rarely a bluff, so each extra street cuts our equity.
-BARREL_DISCOUNT = 0.70
+BARREL_DISCOUNT = 0.60
 # Pot fractions. Logged opponents barely fold more to bigger bets, so value bets run large.
 GOOD_VALUE_BET = 0.70
 STRONG_VALUE_BET = 0.90
+# Heads-up flop bet as the preflop raiser, with any hand. Logged opponents fold
+# to about 45% of small heads-up flop bets, more than a third-pot bet needs.
+CBET_SIZE = 0.33
 
 
 @dataclass
@@ -124,7 +129,7 @@ def unopened_preflop(view, percentile, behind, depth):
 
     if percentile <= OPEN_RANGE[behind]:
         limpers = max(0, round(view.pot / view.big_blind - 1.5))
-        return ("raise", int(view.big_blind * (2.5 + limpers)))
+        return ("raise", int(view.big_blind * (OPEN_SIZE_BB + limpers)))
     return cheap_look(view, percentile)
 
 
@@ -229,10 +234,8 @@ def unbet_postflop(view, tier, draw):
         return ("raise", pot_raise_to(view, 0.55))
     if tier == MEDIUM and heads_up and in_position:
         return ("raise", pot_raise_to(view, 0.40))
-    # Continuation bet: logged opponents fold too rarely to bet the flop with nothing.
-    if tier >= MEDIUM and view.was_aggressor and heads_up and len(view.board) == 3 \
-            and view.rng.random() < 0.6:
-        return ("raise", pot_raise_to(view, 0.40))
+    if view.was_aggressor and heads_up and len(view.board) == 3:
+        return ("raise", pot_raise_to(view, CBET_SIZE))
     return ("check", 0)
 
 

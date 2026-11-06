@@ -11,7 +11,7 @@ $archive = Join-Path $env:TEMP "pokerbot-deploy.tgz"
 $sshArgs = @()
 if ($IdentityFile) { $sshArgs = @("-i", $IdentityFile) }
 
-tar.exe -czf $archive --exclude=logs --exclude=__pycache__ --exclude=.pytest_cache --exclude=.mypy_cache -C $root .
+tar.exe -czf $archive --exclude=logs --exclude=resume --exclude=__pycache__ --exclude=.pytest_cache --exclude=.mypy_cache -C $root .
 if ($LASTEXITCODE -ne 0) { throw "Could not package the project." }
 
 scp @sshArgs $archive "${Server}:pokerbot-deploy.tgz"

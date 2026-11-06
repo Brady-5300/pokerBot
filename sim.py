@@ -89,9 +89,11 @@ def field(view, valid):
             if percentile <= 0.26 and entry:
                 return field_raise(view, entry, 2.5 * view.big_blind)
             return passive(valid) if percentile <= 0.33 or view.to_call == 0 else ("fold", None)
-        if percentile <= 0.06 and entry and view.raises_this_street < 3:
+        # Logged openers facing a 3-bet call 60%, fold 30% and 4-bet 11%.
+        reraise = 0.06 if view.raises_this_street == 1 else 0.03
+        if percentile <= reraise and entry and view.raises_this_street < 3:
             return field_raise(view, entry, 3 * (view.my_bet + view.to_call))
-        limit = 0.25 if view.raises_this_street == 1 else 0.06
+        limit = {1: 0.25, 2: 0.18}.get(view.raises_this_street, 0.06)
         return passive(valid) if percentile <= limit else ("fold", None)
 
     tier = postflop_tier(view.hole, view.board)
