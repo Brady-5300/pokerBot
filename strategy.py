@@ -108,7 +108,8 @@ def decide_preflop(view):
         return ("raise", 3 * (view.to_call + view.my_bet))
 
     price = view.to_call / max(view.stack, 1)
-    if price >= 0.33:
+    # A big shove is strong whatever our own stack, so price it by its size too.
+    if price >= 0.33 or view.to_call >= RAISE_JAM_BB * view.big_blind:
         limit = 0.04
     elif is_reraised:
         limit = 0.03

@@ -43,6 +43,14 @@ UNLOGGED_TYPES = {"table_state"}
 log = logging.getLogger("openpoker")
 
 
+def added_chips(msg):
+    """Chips a player_action put in. All-ins report 0 added, so use the whole stack."""
+    added = msg.get("contribution_delta") or 0
+    if msg.get("action") == "all_in" and not added:
+        added = msg.get("player_stack_before") or msg.get("stack_before") or 0
+    return added
+
+
 @dataclass
 class Hand:
     hand_id: str = ""
@@ -141,10 +149,9 @@ class Session:
         if action == "fold":
             hand.folded.add(seat)
         if seat == self.seat:
-            hand.my_bet += msg.get("contribution_delta") or 0
+            hand.my_bet += added_chips(msg)
         hand.history.append(self.to_act(msg))
-        # All-ins arrive with no amount, only the chips they added.
-        amount = msg.get("amount") or msg.get("contribution_delta") or 0
+        amount = msg.get("amount") or added_chips(msg)
         if action in ("raise", "all_in") and amount > hand.big_blind:
             hand.raises += 1
             hand.i_was_last_raiser = seat == self.seat
@@ -153,7 +160,7 @@ class Session:
 
     def to_act(self, msg):
         action = msg.get("action")
-        added = msg.get("contribution_delta") or 0
+        added = added_chips(msg)
         facing = msg.get("to_call_before") or 0
         pot = (msg.get("pot_before") or 0) + facing
         size = (added - facing) / pot if pot else 0.0
@@ -178,6 +185,13 @@ class Session:
         if self.seat == small:
             return hand.big_blind // 2
         return hand.big_blind if self.seat == big else 0
+
+    @staticmethod
+    def raises_faced(hand, board, to_call):
+        """Counted raises, but never 0 when the price shows someone raised."""
+        if board:
+            return max(hand.raises, 1 if to_call > 0 else 0)
+        return max(hand.raises, 1 if to_call > hand.big_blind else 0)
 
     def build_view(self, msg):
         hand = self.hand
@@ -212,7 +226,7 @@ class Session:
             my_bet=hand.my_bet + (0 if board else self.posted_blind(stacks)),
             opponents=max(len(opponent_stacks), 1),
             players_behind=behind,
-            raises_this_street=hand.raises,
+            raises_this_street=self.raises_faced(hand, board, to_call),
             effective_stack=min(stack, max(opponent_stacks, default=stack)) or stack,
             was_aggressor=hand.i_was_last_raiser,
             opponent_bet_streets=len(hand.bet_streets),

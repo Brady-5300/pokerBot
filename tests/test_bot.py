@@ -259,6 +259,39 @@ def test_valid_actions_with_null_fields_from_the_live_server():
     assert session.pending_turn is not None
 
 
+SHOVE = {"type": "player_action", "seat": 0, "action": "all_in", "amount": None,
+         "street": "preflop", "pot_before": 30, "to_call_before": 20, "contribution_delta": 0,
+         "player_stack_before": 4766, "player_stack_after": 4766}
+
+
+def test_all_in_with_no_reported_chips_counts_as_a_raise():
+    session = seated_session()
+    session.handle(SHOVE)
+    assert session.hand.raises == 1
+    assert session.hand.history[-1].kind == "raise"
+
+
+def test_deep_stack_folds_weak_hand_to_preflop_shove():
+    session = seated_session()
+    session.handle({"type": "hole_cards", "cards": ["Kc", "8h"]})
+    session.handle(SHOVE)
+    shove = [{"action": "fold"}, {"action": "call", "amount": 4746},
+             {"action": "all_in", "amount": 50000}]
+    [message] = session.handle(turn(valid_actions=shove, pot=4796, players=[
+        {"seat": 0, "name": "them", "stack": 0}, {"seat": 3, "name": "me", "stack": 50000}]))
+    assert message["action"] == "fold"
+
+
+def test_unseen_raise_is_inferred_from_the_price():
+    session = seated_session()
+    session.handle({"type": "hole_cards", "cards": ["Kc", "8h"]})
+    shove = [{"action": "fold"}, {"action": "call", "amount": 4746},
+             {"action": "all_in", "amount": 50000}]
+    [message] = session.handle(turn(valid_actions=shove, pot=4796, players=[
+        {"seat": 0, "name": "them", "stack": 0}, {"seat": 3, "name": "me", "stack": 50000}]))
+    assert message["action"] == "fold"
+
+
 def test_raises_are_counted_but_blind_sized_actions_are_not():
     session = seated_session()
     session.handle({"type": "player_action", "seat": 0, "action": "raise", "amount": 20})
