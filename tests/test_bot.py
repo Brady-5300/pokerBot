@@ -282,6 +282,23 @@ def test_deep_stack_folds_weak_hand_to_preflop_shove():
     assert message["action"] == "fold"
 
 
+def test_tight_ranges_only_while_a_listed_player_is_seated():
+    session = seated_session()
+    assert not session.build_view(turn()).tight
+    mimic = [{"seat": 0, "name": "MimicOctopus", "stack": 1980},
+             {"seat": 3, "name": "me", "stack": 2000}]
+    assert session.build_view(turn(players=mimic)).tight
+    assert not session.build_view(turn()).tight
+
+
+def test_tight_profile_folds_a_hand_the_loose_profile_opens():
+    base = dict(hole=cards("Qh 5d"), board=[], pot=30, to_call=20, stack=2000, big_blind=20,
+                min_raise=40, max_raise=2000, players_behind=5, opponents=5,
+                effective_stack=2000)
+    assert strategy.decide(View(**base))[0] == "raise"
+    assert strategy.decide(View(tight=True, **base))[0] == "fold"
+
+
 def test_unseen_raise_is_inferred_from_the_price():
     session = seated_session()
     session.handle({"type": "hole_cards", "cards": ["Kc", "8h"]})

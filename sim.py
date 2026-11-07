@@ -112,6 +112,40 @@ def field(view, valid):
     return passive(valid)
 
 
+def aggro(view, valid):
+    """Copies the loose logged raisers (MimicOctopus, Unkn0wn): about 70% of hands
+    played, a 3-bet to about 25% of opens, and bets on most streets."""
+    entry = offered(valid, "raise")
+    if not view.board:
+        percentile = PERCENTILE[hand_key(view.hole)]
+        if view.raises_this_street == 0:
+            if percentile <= 0.55 and entry:
+                return field_raise(view, entry, 2.5 * view.big_blind)
+            return passive(valid) if percentile <= 0.70 or view.to_call == 0 else ("fold", None)
+        if view.raises_this_street == 1:
+            if percentile <= 0.25 and entry:
+                return field_raise(view, entry, 3 * (view.my_bet + view.to_call))
+            return passive(valid) if percentile <= 0.65 else ("fold", None)
+        if percentile <= 0.04 and entry and view.raises_this_street < 3:
+            return field_raise(view, entry, 3 * (view.my_bet + view.to_call))
+        return passive(valid) if percentile <= 0.20 else ("fold", None)
+
+    tier = postflop_tier(view.hole, view.board)
+    raise_to = view.my_bet + view.to_call + 0.75 * (view.pot + view.to_call)
+    if view.to_call == 0:
+        bet = 0.50 if tier <= WEAK else 0.70
+        if entry and view.rng.random() < bet:
+            return field_raise(view, entry, raise_to)
+        return ("check", None)
+    roll = view.rng.random()
+    fold = {AIR: 0.45, WEAK: 0.25, MEDIUM: 0.05}.get(tier, 0.0)
+    if roll < fold:
+        return ("fold", None)
+    if entry and roll > (0.80 if tier < GOOD else 0.55):
+        return field_raise(view, entry, raise_to)
+    return passive(valid)
+
+
 class Player:
     def __init__(self, name, bot):
         self.name = name
@@ -322,6 +356,9 @@ LINEUPS = {
     "all nits": [(f"nit{i}", nit) for i in range(5)],
     "all random": [(f"random{i}", random_bot) for i in range(5)],
     "logged field": [(f"field{i}", field) for i in range(5)],
+    "field + 1 aggro": [("aggro0", aggro)] + [(f"field{i}", field) for i in range(4)],
+    "field + 2 aggro": [("aggro0", aggro), ("aggro1", aggro)] + [(f"field{i}", field) for i in range(3)],
+    "all aggro": [(f"aggro{i}", aggro) for i in range(5)],
 }
 
 

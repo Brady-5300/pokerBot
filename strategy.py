@@ -19,14 +19,28 @@ from ranges import draw_outs, hand_key
 log = logging.getLogger("strategy")
 
 # Top fraction of hands to open, keyed by players left to act behind us.
-# Logged players fold 71% each to an open, so opens run wide.
-OPEN_RANGE = {5: 0.22, 4: 0.28, 3: 0.40, 2: 0.60, 1: 0.54, 0: 0.54}
+# Logged players fold 71% to an open, call 24% and 3-bet only 5%, then rarely
+# bet the flop, so we open 90% of hands from any seat (+43-64 bb/100 in sim.py).
+OPEN_RANGE = {5: 0.90, 4: 0.90, 3: 0.90, 2: 0.90, 1: 0.90, 0: 0.90}
 SHOVE_RANGE = {5: 0.11, 4: 0.14, 3: 0.19, 2: 0.29, 1: 0.40, 0: 0.40}
 SHORT_STACK_BB = 12
 THREE_BET_RANGE = 0.035
 FOUR_BET_RANGE = 0.015
 RAISE_JAM_BB = 30
+# Top fraction of hands to call an open with: closing the action cheaply, cheap price, dear price.
+CLOSE_CALL_RANGE = 0.70
+CALL_RANGE = 0.45
+DEAR_CALL_RANGE = 0.06
+# Top fraction of hands to call a 3-bet or bigger raise with. Opening 90% means
+# folding to 3-bets too often, so this runs wide (+3 to +23 bb/100 in sim.py).
+RERAISE_CALL_RANGE = 0.15
 OPEN_SIZE_BB = 2.5
+
+# The pre-Nov 7 ranges, used while a player who 3-bets a lot is seated (see View.tight).
+TIGHT_OPEN_RANGE = {5: 0.22, 4: 0.28, 3: 0.40, 2: 0.60, 1: 0.54, 0: 0.54}
+TIGHT_CLOSE_CALL_RANGE = 0.30
+TIGHT_CALL_RANGE = 0.11
+TIGHT_RERAISE_CALL_RANGE = 0.03
 
 # Rough equity by made-hand tier; see postflop_tier().
 AIR, WEAK, MEDIUM, GOOD, STRONG, MONSTER = range(6)
@@ -60,6 +74,7 @@ class View:
     opponent_bet_streets: int = 0  # Postflop streets, including this one, an opponent bet.
     history: tuple = ()  # Every ranges.Act so far this hand.
     opponent_seats: tuple = ()
+    tight: bool = False  # Play the tight preflop ranges.
     samples: int = 0
     rng: random.Random = field(default_factory=random.Random)
 
@@ -112,11 +127,13 @@ def decide_preflop(view):
     if price >= 0.33 or view.to_call >= RAISE_JAM_BB * view.big_blind:
         limit = 0.04
     elif is_reraised:
-        limit = 0.03
+        limit = TIGHT_RERAISE_CALL_RANGE if view.tight else RERAISE_CALL_RANGE
     elif view.players_behind == 0 and view.to_call <= 2.5 * view.big_blind:
-        limit = 0.30
+        limit = TIGHT_CLOSE_CALL_RANGE if view.tight else CLOSE_CALL_RANGE
+    elif price <= 0.08:
+        limit = TIGHT_CALL_RANGE if view.tight else CALL_RANGE
     else:
-        limit = 0.11 if price <= 0.08 else 0.06
+        limit = DEAR_CALL_RANGE
     if percentile <= limit:
         return ("call", 0)
     return check_or_fold(view)
@@ -128,7 +145,8 @@ def unopened_preflop(view, percentile, behind, depth):
         limit = SHOVE_RANGE[behind] * (1 + (SHORT_STACK_BB - depth) / SHORT_STACK_BB)
         return ("jam", 0) if percentile <= limit else cheap_look(view, percentile)
 
-    if percentile <= OPEN_RANGE[behind]:
+    opens = TIGHT_OPEN_RANGE if view.tight else OPEN_RANGE
+    if percentile <= opens[behind]:
         limpers = max(0, round(view.pot / view.big_blind - 1.5))
         return ("raise", int(view.big_blind * (OPEN_SIZE_BB + limpers)))
     return cheap_look(view, percentile)

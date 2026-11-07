@@ -37,6 +37,9 @@ MAX_BACKOFF = 30
 IDLE_SECONDS = 300
 # Equity pricing is off until it clears the full simulator test. Use 2000 to turn it on.
 SAMPLES = 0
+# While any of these is seated we play the tight preflop ranges: they 3-bet
+# 15-32% of opens, against about 5% for the rest of the field.
+TIGHT_AGAINST = {"MimicOctopus", "Unkn0wn"}
 # table_state makes up most of the traffic and nothing replays it, so don't log it.
 UNLOGGED_TYPES = {"table_state"}
 
@@ -89,6 +92,7 @@ class Session:
         self.last_stack = None
         self.auto_rebuy_sent = False
         self.decision_ms_max = 0.0
+        self.tight = False
 
     def handle(self, msg):
         """Process one server message and return the messages to send."""
@@ -213,6 +217,7 @@ class Session:
         opponent_stacks = [stacks[seat] for seat in live if seat != self.seat]
         raise_entry = offered.get("raise") or {}
         stack = stacks.get(self.seat) or raise_entry.get("max", 0) or to_call
+        self.update_tight({player.get("name") for player in players})
 
         return View(
             hole=hand.hole,
@@ -233,8 +238,16 @@ class Session:
             history=tuple(hand.history),
             opponent_seats=tuple(seat for seat in live if seat != self.seat),
             samples=SAMPLES,
+            tight=self.tight,
             rng=self.rng,
         )
+
+    def update_tight(self, names):
+        seated = sorted(names & TIGHT_AGAINST)
+        if bool(seated) != self.tight:
+            self.tight = bool(seated)
+            log.info("%s preflop ranges%s", "tight" if seated else "loose",
+                     " because %s is seated" % ", ".join(seated) if seated else "")
 
     def act(self, turn):
         self.pending_turn = turn
