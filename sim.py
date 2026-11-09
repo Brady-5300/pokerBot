@@ -73,6 +73,8 @@ FIELD_BET = {AIR: 0.17, WEAK: 0.17, MEDIUM: 0.25, GOOD: 0.55, STRONG: 0.75, MONS
 FIELD_FOLD = {AIR: 0.62, WEAK: 0.38, MEDIUM: 0.12, GOOD: 0.03, STRONG: 0.0, MONSTER: 0.0}
 FIELD_RAISE = {AIR: 0.05, WEAK: 0.05, MEDIUM: 0.05, GOOD: 0.12, STRONG: 0.40, MONSTER: 0.50}
 FIELD_BET_SIZE = 0.60
+# Top fraction of hands the field calls an open with: logged 24% on Nov 1-6, 34% on Nov 7-9.
+FIELD_CALL_OPEN = 0.25
 FIELD_SIZE_FOLDS = 0.0  # Extra fold chance per pot of size above FIELD_BET_SIZE, for stress tests.
 
 
@@ -93,7 +95,7 @@ def field(view, valid):
         reraise = 0.06 if view.raises_this_street == 1 else 0.03
         if percentile <= reraise and entry and view.raises_this_street < 3:
             return field_raise(view, entry, 3 * (view.my_bet + view.to_call))
-        limit = {1: 0.25, 2: 0.18}.get(view.raises_this_street, 0.06)
+        limit = {1: FIELD_CALL_OPEN, 2: 0.18}.get(view.raises_this_street, 0.06)
         return passive(valid) if percentile <= limit else ("fold", None)
 
     tier = postflop_tier(view.hole, view.board)

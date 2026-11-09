@@ -49,7 +49,7 @@ TIER_EQUITY = {AIR: 0.08, WEAK: 0.20, MEDIUM: 0.40, GOOD: 0.58, STRONG: 0.75, MO
 BARREL_DISCOUNT = 0.60
 # Pot fractions. Logged opponents barely fold more to bigger bets, so value bets run large.
 GOOD_VALUE_BET = 0.70
-STRONG_VALUE_BET = 0.90
+STRONG_VALUE_BET = 1.00  # Live opponents fold about as often to pot as to half pot; overbets get folds.
 # Heads-up flop bet as the preflop raiser, with any hand. Logged opponents fold
 # to about 45% of small heads-up flop bets, more than a third-pot bet needs.
 CBET_SIZE = 0.33

@@ -335,7 +335,7 @@ def test_no_continuation_bet_into_two_opponents():
 def test_value_bets_scale_with_hand_strength():
     base = dict(board=cards("Ac 7d 2s"), pot=100, to_call=0, stack=2000, big_blind=20)
     assert strategy.decide(View(hole=cards("Ah Kd"), **base)) == ("raise", 70)
-    assert strategy.decide(View(hole=cards("7h 7s"), **base)) == ("raise", 90)
+    assert strategy.decide(View(hole=cards("7h 7s"), **base)) == ("raise", 100)
 
 
 def test_field_bots_play_only_legal_actions():
