@@ -91,6 +91,19 @@ def test_strong_hands_still_call_after_a_bet_on_every_street():
     assert strategy.decide(view)[0] == "call"
 
 
+def test_weak_flush_does_not_reraise_a_river_raise():
+    # Nov 11 live hand: a 6-high flush on a four-spade board re-raised until all in, -60,603.
+    view = View(hole=cards("6s Qd"), board=cards("Qs 7s Js Kh As"), pot=2488, to_call=3763,
+                stack=124757, big_blind=20, raises_this_street=2, opponent_bet_streets=3)
+    assert strategy.decide(view)[0] in ("call", "fold")
+
+
+def test_nut_flush_still_reraises():
+    view = View(hole=cards("Ks Qd"), board=cards("2s 7s Js Kh As"), pot=2488, to_call=1568,
+                stack=124757, big_blind=20, raises_this_street=1, opponent_bet_streets=3)
+    assert strategy.decide(view)[0] in ("raise", "jam")
+
+
 def test_position_order_six_handed_and_heads_up():
     assert action_order([0, 1, 2, 3, 4, 5], 0, preflop=True) == [3, 4, 5, 0, 1, 2]
     assert action_order([0, 1, 2, 3, 4, 5], 0, preflop=False) == [1, 2, 3, 4, 5, 0]

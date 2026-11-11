@@ -28,8 +28,10 @@ THREE_BET_RANGE = 0.035
 FOUR_BET_RANGE = 0.015
 RAISE_JAM_BB = 30
 # Top fraction of hands to call an open with: closing the action cheaply, cheap price, dear price.
-CLOSE_CALL_RANGE = 0.70
-CALL_RANGE = 0.45
+# The bots climbing fastest on Nov 9-11 call 55-65% of opens; calling this wide
+# gained 11-32 bb/100 in sim.py against every field model.
+CLOSE_CALL_RANGE = 0.90
+CALL_RANGE = 0.75
 DEAR_CALL_RANGE = 0.06
 # Top fraction of hands to call a 3-bet or bigger raise with. Opening 90% means
 # folding to 3-bets too often, so this runs wide (+3 to +23 bb/100 in sim.py).
@@ -53,6 +55,11 @@ STRONG_VALUE_BET = 1.00  # Live opponents fold about as often to pot as to half 
 # Heads-up flop bet as the preflop raiser, with any hand. Logged opponents fold
 # to about 45% of small heads-up flop bets, more than a third-pot bet needs.
 CBET_SIZE = 0.33
+# A strong hand keeps its tier only while few opponent hands beat it: (share, highest tier).
+# A 6-high flush on a four-flush board loses to 17% of hands, so it is no monster.
+NUT_CAPS = ((0.02, MONSTER), (0.06, STRONG), (0.15, GOOD))
+# Only flushes and straights get capped; sets and two pair are already tiered by board texture.
+NUT_CAP_CATEGORY = ev.STRAIGHT
 
 
 @dataclass
@@ -220,6 +227,28 @@ def board_is_scary(board):
     return len(board) >= 4 and ev.straight_outs(rank_mask) >= 1
 
 
+def beaten_share(hole, board):
+    """Share of opponent two-card hands that beat ours on this board right now."""
+    mine = ev.evaluate(hole + board)
+    dead = set(hole) | set(board)
+    deck = [card for card in range(52) if card not in dead]
+    beaten = total = 0
+    for index, first in enumerate(deck):
+        for second in deck[index + 1:]:
+            total += 1
+            if ev.evaluate([first, second] + board) > mine:
+                beaten += 1
+    return beaten / total
+
+
+def nut_capped_tier(hole, board, tier):
+    if tier < STRONG or ev.category(ev.evaluate(hole + board)) < NUT_CAP_CATEGORY:
+        return tier
+    share = beaten_share(hole, board)
+    cap = next((capped for limit, capped in NUT_CAPS if share <= limit), MEDIUM)
+    return min(tier, cap)
+
+
 def draw_equity(hole, board):
     """Approximate equity from draws, using the rule of 2 and 4."""
     return draw_outs(hole, board) * (0.04 if len(board) == 3 else 0.02)
@@ -236,7 +265,7 @@ def decide_postflop(view):
             return ranges.best_option(view)
         except Exception:
             log.exception("range pricing failed; using the rule-based decision")
-    tier = postflop_tier(view.hole, view.board)
+    tier = nut_capped_tier(view.hole, view.board, postflop_tier(view.hole, view.board))
     draw = draw_equity(view.hole, view.board)
     if view.to_call == 0:
         return unbet_postflop(view, tier, draw)
