@@ -323,6 +323,7 @@ class Table:
             opponent_bet_streets=sum(bool(bettors - {seat}) for bettors in self.street_bettors),
             history=tuple(self.history),
             opponent_seats=tuple(s for s in live if s != seat),
+            bet_last_street=len(self.street_bettors) >= 2 and seat in self.street_bettors[-2],
             rng=self.rng,
         )
 

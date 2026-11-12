@@ -69,6 +69,10 @@ def test_two_full_houses_use_highest_pair_or_second_trips():
     ("Qd Td", "7h 7s 5c 5d", strategy.AIR),      # both pairs are on the board
     ("Jd Td", "Kh Js 7s 7c", strategy.MEDIUM),   # our pair plus the board's pair
     ("Kd Td", "Kh Ks 7s 2c", strategy.STRONG),   # trips with one of our cards
+    ("Ah Ad", "Js Jh 5s", strategy.GOOD),        # overpair on a paired board
+    ("6h 6d", "Js Jh 5s", strategy.MEDIUM),      # pocket pair under the board's pair
+    ("6h 6d", "Js Jh 5s Kh 2d", strategy.WEAK),  # the same pair under two higher cards
+    ("Ah 5d", "Kc Ks 5s", strategy.MEDIUM),      # bottom pair plus the board's pair
 ])
 def test_postflop_tiers(hole, board, expected):
     assert postflop_tier(cards(hole), cards(board)) == expected
@@ -102,6 +106,57 @@ def test_nut_flush_still_reraises():
     view = View(hole=cards("Ks Qd"), board=cards("2s 7s Js Kh As"), pot=2488, to_call=1568,
                 stack=124757, big_blind=20, raises_this_street=1, opponent_bet_streets=3)
     assert strategy.decide(view)[0] in ("raise", "jam")
+
+
+def test_big_stack_leaves_to_bank_chips_then_rejoins():
+    session = seated_session()
+    assert session.handle({"type": "hand_result", "final_stacks": {"3": client.STACK_CAP}}) == []
+    leave, later = session.handle({"type": "hand_result", "final_stacks": {"3": client.STACK_CAP + 1}})
+    assert leave == {"type": "leave_table"}
+    assert later.message == {"type": "join_lobby", "buy_in": 5000}
+    # Other players leaving don't end the wait; our own seat leaving does.
+    assert session.handle({"type": "player_left", "seat": 0, "table_id": "t"}) == []
+    [rejoin] = session.handle({"type": "player_left", "seat": 3, "table_id": "t"})
+    assert rejoin.message["type"] == "join_lobby" and session.table_id is None
+    session.handle({"type": "table_joined", "table_id": "u", "seat": 1, "players": []})
+    assert not session.leaving
+
+
+def test_leave_that_did_not_take_is_retried_after_the_next_hand():
+    session = seated_session()
+    over = client.STACK_CAP + 5000
+    session.handle({"type": "hand_result", "final_stacks": {"3": over}})
+    session.handle({"type": "error", "code": "already_seated", "table_id": "t", "seat": 3})
+    session.handle({"type": "hole_cards", "cards": ["Ah", "Ad"]})
+    assert session.handle({"type": "hand_result", "final_stacks": {"3": over}})[0] == {
+        "type": "leave_table"}
+
+
+def checked_to(**overrides):
+    settings = dict(hole=cards("7h 2d"), board=cards("Ks 9c 4d Jh"), pot=200, to_call=0,
+                    stack=5000, big_blind=20, opponents=1, players_behind=0)
+    settings.update(overrides)
+    return View(**settings)
+
+
+def test_air_bets_when_checked_to_heads_up_unless_we_bet_the_street_before():
+    assert strategy.decide(checked_to()) == ("raise", 66)
+    assert strategy.decide(checked_to(bet_last_street=True)) == ("check", 0)
+    assert strategy.decide(checked_to(opponents=2)) == ("check", 0)
+    assert strategy.decide(checked_to(players_behind=1)) == ("check", 0)
+
+
+def test_client_reports_a_bet_on_the_previous_street():
+    session = seated_session()
+    session.handle({"type": "community_cards", "cards": ["Ks", "9c", "4d"]})
+    session.handle({"type": "player_action", "seat": 3, "action": "raise", "amount": 60,
+                    "contribution_delta": 60, "pot_before": 100, "to_call_before": 0})
+    turn_cards = ["Ks", "9c", "4d", "Jh"]
+    session.handle({"type": "community_cards", "cards": turn_cards})
+    assert session.build_view(turn(community_cards=turn_cards)).bet_last_street
+    river_cards = turn_cards + ["2s"]
+    session.handle({"type": "community_cards", "cards": river_cards})
+    assert not session.build_view(turn(community_cards=river_cards)).bet_last_street
 
 
 def test_position_order_six_handed_and_heads_up():
@@ -141,6 +196,21 @@ def test_aces_raise_and_seven_deuce_folds_under_the_gun():
                 effective_stack=2000)
     assert strategy.decide(View(hole=cards("Ah Ad"), **base))[0] == "raise"
     assert strategy.decide(View(hole=cards("7h 2d"), **base))[0] == "fold"
+
+
+def test_chips_we_cannot_call_are_left_out_of_the_pot():
+    session = seated_session()
+    flop = ["8d", "7d", "4s"]
+    session.handle({"type": "community_cards", "cards": flop})
+    session.handle({"type": "player_action", "seat": 0, "action": "raise", "amount": 40000,
+                    "contribution_delta": 40000, "pot_before": 175, "to_call_before": 0})
+    shove = turn(community_cards=flop, pot=40175, valid_actions=[
+        {"action": "fold"}, {"action": "call", "amount": 2000}])
+    assert session.build_view(shove).pot == 175 + 2000
+    # A bet we can cover stays in the pot in full.
+    covered = turn(community_cards=flop, pot=40175, valid_actions=[
+        {"action": "fold"}, {"action": "call", "amount": 1500}])
+    assert session.build_view(covered).pot == 40175
 
 
 def turn(**overrides):

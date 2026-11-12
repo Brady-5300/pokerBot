@@ -28,10 +28,10 @@ THREE_BET_RANGE = 0.035
 FOUR_BET_RANGE = 0.015
 RAISE_JAM_BB = 30
 # Top fraction of hands to call an open with: closing the action cheaply, cheap price, dear price.
-# The bots climbing fastest on Nov 9-11 call 55-65% of opens; calling this wide
-# gained 11-32 bb/100 in sim.py against every field model.
-CLOSE_CALL_RANGE = 0.90
-CALL_RANGE = 0.75
+# Live on Nov 7-12, calls with hands in the 45-60% band made money and calls with
+# anything weaker lost about 45 chips each (226 hands), so both stop at 60%.
+CLOSE_CALL_RANGE = 0.60
+CALL_RANGE = 0.60
 DEAR_CALL_RANGE = 0.06
 # Top fraction of hands to call a 3-bet or bigger raise with. Opening 90% means
 # folding to 3-bets too often, so this runs wide (+3 to +23 bb/100 in sim.py).
@@ -48,13 +48,18 @@ TIGHT_RERAISE_CALL_RANGE = 0.03
 AIR, WEAK, MEDIUM, GOOD, STRONG, MONSTER = range(6)
 TIER_EQUITY = {AIR: 0.08, WEAK: 0.20, MEDIUM: 0.40, GOOD: 0.58, STRONG: 0.75, MONSTER: 0.92}
 # Betting street after street is rarely a bluff, so each extra street cuts our equity.
-BARREL_DISCOUNT = 0.60
+# Kept mild: logged river bettors win 72% when called whether they bet one street or three.
+BARREL_DISCOUNT = 0.70
 # Pot fractions. Logged opponents barely fold more to bigger bets, so value bets run large.
 GOOD_VALUE_BET = 0.70
 STRONG_VALUE_BET = 1.00  # Live opponents fold about as often to pot as to half pot; overbets get folds.
 # Heads-up flop bet as the preflop raiser, with any hand. Logged opponents fold
 # to about 45% of small heads-up flop bets, more than a third-pot bet needs.
 CBET_SIZE = 0.33
+# Bet any hand when checked to heads-up. Logged players who check then face a bet
+# fold about half the time on every street, unless they just called our bet on
+# the street before (then only 14-23%).
+STAB = True
 # A strong hand keeps its tier only while few opponent hands beat it: (share, highest tier).
 # A 6-high flush on a four-flush board loses to 17% of hands, so it is no monster.
 NUT_CAPS = ((0.02, MONSTER), (0.06, STRONG), (0.15, GOOD))
@@ -81,6 +86,7 @@ class View:
     opponent_bet_streets: int = 0  # Postflop streets, including this one, an opponent bet.
     history: tuple = ()  # Every ranges.Act so far this hand.
     opponent_seats: tuple = ()
+    bet_last_street: bool = False  # We bet or raised on the previous postflop street.
     tight: bool = False  # Play the tight preflop ranges.
     samples: int = 0
     rng: random.Random = field(default_factory=random.Random)
@@ -189,7 +195,10 @@ def postflop_tier(hole, board):
         tier = MONSTER if pocket_pair else STRONG
     elif cat == ev.TWO_PAIR:
         if board_paired and not (set(hole_ranks) <= set(board_ranks)):
-            tier = GOOD if hole_ranks[0] >= top or pocket_pair else MEDIUM
+            # The board holds one of the pairs, so rank ours against the other board cards.
+            mine = hole_ranks[0] if pocket_pair else max(r for r in hole_ranks if r in board_ranks)
+            higher = len({rank for rank in board_ranks if rank > mine})
+            tier = GOOD if higher == 0 else MEDIUM if higher == 1 else WEAK
         else:
             tier = STRONG
     elif cat == ev.PAIR:
@@ -282,6 +291,8 @@ def unbet_postflop(view, tier, draw):
         return ("raise", pot_raise_to(view, 0.55))
     if tier == MEDIUM and heads_up and in_position:
         return ("raise", pot_raise_to(view, 0.40))
+    if STAB and heads_up and in_position and not view.bet_last_street:
+        return ("raise", pot_raise_to(view, CBET_SIZE))
     if view.was_aggressor and heads_up and len(view.board) == 3:
         return ("raise", pot_raise_to(view, CBET_SIZE))
     return ("check", 0)

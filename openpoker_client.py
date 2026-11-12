@@ -32,6 +32,12 @@ KEY_FILE = Path.home() / ".openpoker_key"
 BUY_IN = 5000
 MIN_BUY_IN = 1000
 BUST_REJOIN_DELAY = 5
+# Above this stack we leave the table, which banks the chips, and sit back down with
+# BUY_IN. On Nov 7-11 hands where we and an opponent both had 50,000+ lost 9 chips a
+# hand: three all-ins against other big stacks cost 174,000. Below that a deep stack
+# pays: 15,000-50,000 made 71 chips a hand against 8 with under 15,000.
+STACK_CAP = 50000
+LEAVE_REJOIN_DELAY = 8
 REBUY_RETRY_DELAY = 60
 MAX_BACKOFF = 30
 IDLE_SECONDS = 300
@@ -66,6 +72,8 @@ class Hand:
     my_bet: int = 0
     street_cards: int = 0
     bet_streets: set = field(default_factory=set)
+    my_bet_streets: set = field(default_factory=set)
+    street_bets: dict = field(default_factory=dict)  # Chips each seat put in on this street.
     history: list = field(default_factory=list)
 
 
@@ -93,6 +101,7 @@ class Session:
         self.auto_rebuy_sent = False
         self.decision_ms_max = 0.0
         self.tight = False
+        self.leaving = False
 
     def handle(self, msg):
         """Process one server message and return the messages to send."""
@@ -123,6 +132,8 @@ class Session:
     def on_table_joined(self, msg):
         self.seat = msg.get("seat")
         self.buy_in = self.target_buy_in
+        self.leaving = False
+        self.last_stack = None
         log.info("seated at table %s, seat %s", msg.get("table_id"), self.seat)
 
     def on_hand_start(self, msg):
@@ -141,6 +152,7 @@ class Session:
     def on_community_cards(self, msg):
         self.hand.raises = 0
         self.hand.my_bet = 0
+        self.hand.street_bets = {}
         self.hand.street_cards = len(msg.get("cards") or [])
 
     def on_player_action(self, msg):
@@ -152,9 +164,13 @@ class Session:
         seat = msg.get("seat")
         if action == "fold":
             hand.folded.add(seat)
+        hand.street_bets[seat] = hand.street_bets.get(seat, 0) + added_chips(msg)
         if seat == self.seat:
             hand.my_bet += added_chips(msg)
-        hand.history.append(self.to_act(msg))
+        act = self.to_act(msg)
+        hand.history.append(act)
+        if seat == self.seat and hand.street_cards and act.kind in ("bet", "raise"):
+            hand.my_bet_streets.add(hand.street_cards)
         amount = msg.get("amount") or added_chips(msg)
         if action in ("raise", "all_in") and amount > hand.big_blind:
             hand.raises += 1
@@ -174,6 +190,10 @@ class Session:
         return Act(msg.get("seat"), self.hand.street_cards, kind, max(size, 0.0))
 
     def on_player_left(self, msg):
+        if self.leaving and msg.get("seat") == self.seat:
+            self.leaving = False
+            self.clear_table()
+            return [Later(1, self.join_lobby())]
         self.hand.folded.add(msg.get("seat"))
 
     def on_your_turn(self, msg):
@@ -218,17 +238,23 @@ class Session:
         raise_entry = offered.get("raise") or {}
         stack = stacks.get(self.seat) or raise_entry.get("max", 0) or to_call
         self.update_tight({player.get("name") for player in players})
+        my_bet = hand.my_bet + (0 if board else self.posted_blind(stacks))
+        # A bet bigger than we can call is partly returned, so those chips are not in our pot.
+        uncallable = 0
+        if to_call and to_call >= stack:
+            uncallable = sum(max(0, bet - my_bet - to_call)
+                             for seat, bet in hand.street_bets.items() if seat != self.seat)
 
         return View(
             hole=hand.hole,
             board=board,
-            pot=msg.get("pot", 0),
+            pot=max(msg.get("pot", 0) - uncallable, 0),
             to_call=to_call,
             stack=stack,
             big_blind=hand.big_blind,
             min_raise=raise_entry.get("min", 0),
             max_raise=raise_entry.get("max", 0),
-            my_bet=hand.my_bet + (0 if board else self.posted_blind(stacks)),
+            my_bet=my_bet,
             opponents=max(len(opponent_stacks), 1),
             players_behind=behind,
             raises_this_street=self.raises_faced(hand, board, to_call),
@@ -237,6 +263,7 @@ class Session:
             opponent_bet_streets=len(hand.bet_streets),
             history=tuple(hand.history),
             opponent_seats=tuple(seat for seat in live if seat != self.seat),
+            bet_last_street=len(board) - 1 in hand.my_bet_streets,
             samples=SAMPLES,
             tight=self.tight,
             rng=self.rng,
@@ -302,6 +329,10 @@ class Session:
         log.info("hand %d done: stack %s (%s)", self.hands_played, stack, change)
         if stack is not None:
             self.last_stack = stack
+            if stack > STACK_CAP and not self.leaving:
+                log.info("stack %s is over %s: leaving to bank it", stack, STACK_CAP)
+                self.leaving = True
+                return [{"type": "leave_table"}, Later(LEAVE_REJOIN_DELAY, self.join_lobby())]
 
     def on_busted(self, msg):
         log.info("busted")
@@ -371,6 +402,7 @@ class Session:
             self.rebuying = True
             return [{"type": "rebuy", "amount": 0}]
         if code == "already_seated":
+            self.leaving = False  # The leave didn't take; try again after the next hand.
             self.table_id = msg.get("table_id", self.table_id)
             self.seat = msg.get("seat", self.seat)
             return [self.resync()]
