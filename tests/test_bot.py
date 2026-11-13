@@ -198,6 +198,16 @@ def test_aces_raise_and_seven_deuce_folds_under_the_gun():
     assert strategy.decide(View(hole=cards("7h 2d"), **base))[0] == "fold"
 
 
+def test_huge_preflop_raise_jams_queens_calls_tens_and_folds_nines():
+    base = dict(board=[], pot=7060, to_call=7030, stack=46147, big_blind=20, my_bet=0,
+                min_raise=14040, max_raise=46147, players_behind=3, opponents=5,
+                raises_this_street=1, effective_stack=46147)
+    assert strategy.decide(View(hole=cards("Qh Qd"), **base))[0] == "jam"
+    assert strategy.decide(View(hole=cards("Th Td"), **base))[0] == "call"
+    assert strategy.decide(View(hole=cards("9h 9s"), **base))[0] == "fold"
+    assert strategy.decide(View(hole=cards("Ah Qh"), **base))[0] == "fold"
+
+
 def test_chips_we_cannot_call_are_left_out_of_the_pot():
     session = seated_session()
     flop = ["8d", "7d", "4s"]
@@ -365,7 +375,8 @@ def test_deep_stack_folds_weak_hand_to_preflop_shove():
     assert message["action"] == "fold"
 
 
-def test_tight_ranges_only_while_a_listed_player_is_seated():
+def test_tight_ranges_only_while_a_listed_player_is_seated(monkeypatch):
+    monkeypatch.setattr(client, "TIGHT_AGAINST", {"MimicOctopus"})
     session = seated_session()
     assert not session.build_view(turn()).tight
     mimic = [{"seat": 0, "name": "MimicOctopus", "stack": 1980},

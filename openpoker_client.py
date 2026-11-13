@@ -45,7 +45,7 @@ IDLE_SECONDS = 300
 SAMPLES = 0
 # While any of these is seated we play the tight preflop ranges: they 3-bet
 # 15-32% of opens, against about 5% for the rest of the field.
-TIGHT_AGAINST = {"MimicOctopus", "Unkn0wn"}
+TIGHT_AGAINST = set()  # Was MimicOctopus and Unkn0wn: tight mode made -20/hand vs +46 loose (937 hands, capped at 10k).
 # table_state makes up most of the traffic and nothing replays it, so don't log it.
 UNLOGGED_TYPES = {"table_state"}
 

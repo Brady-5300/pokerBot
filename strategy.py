@@ -37,6 +37,10 @@ DEAR_CALL_RANGE = 0.06
 # folding to 3-bets too often, so this runs wide (+3 to +23 bb/100 in sim.py).
 RERAISE_CALL_RANGE = 0.15
 OPEN_SIZE_BB = 2.5
+# Facing a raise of 30 BB or more, or a third of our stack: jam AA-QQ, call with JJ-TT.
+# On Nov 12 a 3-bet with 99 into a 350 BB raise and the call of the 4-bet lost 46,147.
+BIG_RAISE_JAM_RANGE = 0.012
+BIG_RAISE_CALL_RANGE = 0.022
 
 # The pre-Nov 7 ranges, used while a player who 3-bets a lot is seated (see View.tight).
 TIGHT_OPEN_RANGE = {5: 0.22, 4: 0.28, 3: 0.40, 2: 0.60, 1: 0.54, 0: 0.54}
@@ -129,17 +133,19 @@ def decide_preflop(view):
         return unopened_preflop(view, percentile, behind, depth)
 
     is_reraised = view.raises_this_street >= 2
+    price = view.to_call / max(view.stack, 1)
+    if price >= 0.33 or view.to_call >= RAISE_JAM_BB * view.big_blind:
+        if percentile <= BIG_RAISE_JAM_RANGE:
+            return ("jam", 0)
+        return ("call", 0) if percentile <= BIG_RAISE_CALL_RANGE else check_or_fold(view)
+
     premium = FOUR_BET_RANGE if is_reraised else THREE_BET_RANGE
     if percentile <= premium:
         if depth <= RAISE_JAM_BB or is_reraised:
             return ("jam", 0)
         return ("raise", 3 * (view.to_call + view.my_bet))
 
-    price = view.to_call / max(view.stack, 1)
-    # A big shove is strong whatever our own stack, so price it by its size too.
-    if price >= 0.33 or view.to_call >= RAISE_JAM_BB * view.big_blind:
-        limit = 0.04
-    elif is_reraised:
+    if is_reraised:
         limit = TIGHT_RERAISE_CALL_RANGE if view.tight else RERAISE_CALL_RANGE
     elif view.players_behind == 0 and view.to_call <= 2.5 * view.big_blind:
         limit = TIGHT_CLOSE_CALL_RANGE if view.tight else CLOSE_CALL_RANGE
