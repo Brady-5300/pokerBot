@@ -36,7 +36,8 @@ BUST_REJOIN_DELAY = 5
 # BUY_IN. On Nov 7-11 hands where we and an opponent both had 50,000+ lost 9 chips a
 # hand: three all-ins against other big stacks cost 174,000. Below that a deep stack
 # pays: 15,000-50,000 made 71 chips a hand against 8 with under 15,000.
-STACK_CAP = 50000
+# Off for the final 17 hours of Season 16: we are 35k behind 30th, so bigger swings help.
+STACK_CAP = 10 ** 9
 LEAVE_REJOIN_DELAY = 8
 REBUY_RETRY_DELAY = 60
 MAX_BACKOFF = 30
